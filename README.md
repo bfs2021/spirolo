@@ -148,8 +148,8 @@ Advisory: at least 15 decided and shown precision at least 0.80.
 
 | Rule | Tier | Status | True / decided | Precision | 95% Wilson interval | Measured entries |
 | --- | --- | --- | ---: | ---: | --- | ---: |
-| absence-anchor | advisory | UNADJUDICATED | 16 / 20 | 0.800 | 0.584–0.919 | 12 |
-| dead-skip | advisory | INSUFFICIENT | 18 / 18 | 1.000 | 0.824–1.000 | 7 |
+| absence-anchor | advisory | UNADJUDICATED | 28 / 28 | 1.000 | 0.879–1.000 | 16 |
+| dead-skip | advisory | UNADJUDICATED | 39 / 39 | 1.000 | 0.910–1.000 | 21 |
 | duplicate-test | advisory | UNADJUDICATED | 15 / 18 | 0.833 | 0.608–0.942 | 19 |
 | fail-closed-setup | advisory | UNADJUDICATED | 19 / 19 | 1.000 | 0.832–1.000 | 10 |
 | flake-candidate | experimental | INSUFFICIENT | 3 / 6 | 0.500 | 0.188–0.812 | 7 |
