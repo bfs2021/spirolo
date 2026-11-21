@@ -2,11 +2,14 @@
 //
 //   CRATE=<crate or empty> node scripts/public/mutants.mjs plan
 //   node scripts/public/mutants.mjs run <title> -- cargo mutants ...
+//   CRATE=<crate or empty> node scripts/public/mutants.mjs totals <directory>
 //
 // `plan` prints the job matrix as a `matrix=` line for $GITHUB_OUTPUT: one row per shard.
 // `run` executes cargo-mutants, appends the counts it left in mutants.out/outcomes.json to
 // the job summary, and exits 0 whenever mutants were tested, survivors or not. A survivor
 // is a number to report; a run that tested nothing is the failure.
+// `totals` sums the shards' outcomes.json files, one directory per downloaded artifact, into
+// one job-summary row per crate.
 import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -40,7 +43,7 @@ const MEASURED = new Map([
   [3, 'some mutants timed out'],
 ]);
 const NOT_MEASURED = new Map([
-  [1, 'usage error'],
+  [1, 'bad arguments or another error'],
   [4, 'the tests fail or hang before any mutation'],
   [5, 'the --in-diff diff does not match the tree'],
   [6, 'the --in-diff diff is not valid'],
@@ -61,8 +64,17 @@ function outcome(command) {
   } catch {
     return { failure: `cargo-mutants exited ${status} and left no readable mutants.out/outcomes.json.` };
   }
-  if (!(counts.total_mutants > 0)) return { failure: `cargo-mutants exited ${status} and tested no mutant.` };
+  const empty = unmeasured(counts);
+  if (empty) return { failure: `cargo-mutants exited ${status} and ${empty}.` };
   return { status, counts };
+}
+
+// Why counts that cargo-mutants wrote are still not a measurement.
+function unmeasured(counts) {
+  if (!(counts.total_mutants > 0)) return 'tested no mutant';
+  // Every build failed (a full disk, say), so no mutant reached the tests.
+  if (counts.unviable === counts.total_mutants) return 'every mutant was unviable';
+  return undefined;
 }
 
 function run(title, command) {
@@ -74,13 +86,52 @@ function run(title, command) {
     '',
     `cargo-mutants exited ${status}: ${MEASURED.get(status)}.`,
   ];
-  const summary = `### Mutants: ${title}\n\n${lines.join('\n')}\n`;
-  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
-  else process.stdout.write(summary);
-  if (failure) {
-    console.error(`Not measured. ${failure}`);
-    process.exitCode = 1;
+  report(`### Mutants: ${title}\n\n${lines.join('\n')}\n`, failure && lines[0]);
+}
+
+const COUNTS = ['total_mutants', 'caught', 'missed', 'unviable', 'timeout'];
+
+function totals(directory, only) {
+  const rows = [];
+  for (const { crate, shard, shards } of shardPlan(only)) {
+    let row = rows.find((candidate) => candidate.crate === crate);
+    if (!row) rows.push(row = { crate, reported: 0, shards, counts: COUNTS.map(() => 0) });
+    let counts;
+    try {
+      counts = JSON.parse(readFileSync(`${directory}/mutants-${crate}-${shard}-of-${shards}/outcomes.json`, 'utf8'));
+    } catch {
+      continue;
+    }
+    // Without an end time the shard was stopped part-way, and its counts are partial.
+    if (!counts.end_time || unmeasured(counts)) continue;
+    row.reported += 1;
+    row.counts = row.counts.map((sum, index) => sum + counts[COUNTS[index]]);
   }
+  const sum = (pick) => rows.reduce((total, row) => total + pick(row), 0);
+  rows.push({
+    crate: '**Total**', reported: sum((row) => row.reported), shards: sum((row) => row.shards),
+    counts: COUNTS.map((_, index) => sum((row) => row.counts[index])),
+  });
+  const shards = (row) => `${row.reported}/${row.shards}${row.reported < row.shards ? ' (incomplete)' : ''}`;
+  const lines = [
+    '| Crate | Shards | Tested | Caught | Missed | Unviable | Timeout |',
+    '| :--- | ---: | ---: | ---: | ---: | ---: | ---: |',
+    ...rows.map((row) => `| ${row.crate} | ${shards(row)} | ${row.counts.join(' | ')} |`),
+  ];
+  const { reported, shards: planned } = rows.at(-1);
+  const failure = reported < planned
+    && `Incomplete: ${planned - reported} of ${planned} shards did not finish measuring, and their mutants are not counted.`;
+  if (failure) lines.push('', failure);
+  report(`### Mutants per crate\n\n${lines.join('\n')}\n`, failure);
+}
+
+// To the job summary on GitHub, with a failure repeated in the log; to stdout elsewhere.
+function report(summary, failure) {
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, summary);
+    if (failure) console.error(failure);
+  } else process.stdout.write(summary);
+  if (failure) process.exitCode = 1;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
@@ -88,7 +139,8 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const [mode, title, separator, ...command] = process.argv.slice(2);
     if (mode === 'plan') console.log(`matrix=${JSON.stringify({ include: shardPlan(process.env.CRATE) })}`);
     else if (mode === 'run' && separator === '--' && command.length) run(title, command);
-    else throw new Error('usage: node scripts/public/mutants.mjs plan | run <title> -- <command...>');
+    else if (mode === 'totals' && title) totals(title, process.env.CRATE);
+    else throw new Error('usage: node scripts/public/mutants.mjs plan | run <title> -- <command...> | totals <directory>');
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
