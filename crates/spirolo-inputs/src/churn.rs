@@ -92,9 +92,11 @@ fn count(field: &str) -> Option<u64> {
 /// The path a numstat line counts toward: the new side of a rename. Git writes a rename as
 /// `prefix{old => new}suffix` when the paths share a prefix or suffix, and as `old => new`
 /// otherwise; an empty side (`a/{b => }/c`) leaves a doubled slash, which is collapsed.
+/// Braces that close before they open (`a}b{c`) are not a rename group: the path is read as is.
 fn new_path(file: &str) -> String {
     if let (Some(open), Some(close)) = (file.find('{'), file.rfind('}')) {
-        if let Some((_, new)) = file[open + 1..close].split_once(" => ") {
+        let group = file.get(open + 1..close);
+        if let Some((_, new)) = group.and_then(|group| group.split_once(" => ")) {
             let joined = format!("{}{new}{}", &file[..open], &file[close + 1..]);
             return joined.replace("//", "/");
         }
