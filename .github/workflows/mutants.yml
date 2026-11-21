@@ -4,17 +4,80 @@ permissions:
 on:
   schedule: [{ cron: "0 3 * * 1" }]
   workflow_dispatch:
+    inputs:
+      crate:
+        description: "One crate to mutate, for example spirolo-inputs. Empty runs every crate."
+        type: string
+        default: ""
 jobs:
-  mutants:
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "22" }
+      - id: plan
+        run: node scripts/public/mutants.mjs plan >> "$GITHUB_OUTPUT"
+        env:
+          CRATE: ${{ inputs.crate }}
+  mutants:
+    name: ${{ matrix.crate }} ${{ matrix.shard }}/${{ matrix.shards }}
+    needs: plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable (2026-10-28)
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "22" }
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
         with: { tool: "cargo-mutants, cargo-nextest" }
-      - run: cargo mutants --in-place --output mutants.out || true
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with: { name: mutants, path: mutants.out }
+      # The baseline. cargo-mutants' own baseline runs only the mutated crate's tests, even
+      # with --test-workspace=true, so the suite every mutant is judged by is proven here.
+      - run: cargo nextest run --workspace
+      # In place, so each mutant is built and tested in the tree the baseline just passed in.
+      # A mutant counts as missed only when no test in the workspace catches it.
+      - run: >-
+          node scripts/public/mutants.mjs run "$CRATE $SHARD/$SHARDS" --
+          cargo mutants --in-place --baseline=skip --timeout 120
+          --package "$CRATE" --shard "$SHARD/$SHARDS"
+          --test-tool nextest --test-workspace=true --cargo-test-arg=--fail-fast
+        timeout-minutes: 300
+        env:
+          CRATE: ${{ matrix.crate }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: mutants-${{ matrix.crate }}-${{ matrix.shard }}-of-${{ matrix.shards }}
+          path: mutants.out
+  # One row per crate, summed over its shards. It runs when a shard failed too, and then
+  # shows that crate as incomplete instead of summing fewer shards as if they were all.
+  totals:
+    needs: mutants
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with: { node-version: "22" }
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with: { pattern: "mutants-*", path: shards }
+      - run: node scripts/public/mutants.mjs totals shards
+        env:
+          CRATE: ${{ inputs.crate }}
