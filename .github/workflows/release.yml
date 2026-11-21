@@ -119,6 +119,34 @@ jobs:
           if [[ "$RELEASE_TAG" == *-* ]]; then flags+=(--prerelease); fi
           gh release create "$RELEASE_TAG" --verify-tag --title "Spirolo ${RELEASE_TAG#v}" \
             --notes-file "$RUNNER_TEMP/release-notes.md" "${flags[@]}" target/rc/*
+  # Points npm's `latest` at a prerelease while no release exists, so the package page and a plain
+  # `npm install` show the version the documentation names. Its own job: a refusal here never
+  # touches the publication or the GitHub release, and it can be rerun alone.
+  latest:
+    needs: publish
+    if: vars.RELEASE_PUBLISH == 'true' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PUBLISH_NPM: 'true'
+      REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
+      # Trusted publishing authorises `npm dist-tag` from npm 11.21; Node 24 ships an older npm.
+      NPM_VERSION: 11.21.3
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24'
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - name: Install the npm that signs dist-tag changes with the workflow identity
+        run: npm install --global "npm@${NPM_VERSION}" --ignore-scripts --no-audit --no-fund
+      - name: Point latest at the prerelease while no release exists
+        run: node npm/publish.mjs --latest
   # Lists the published version on the MCP Registry. Its own job, so a registry outage never
   # touches the npm publication or the GitHub release, and it can be rerun alone.
   registry:

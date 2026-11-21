@@ -6,7 +6,10 @@ for x64 and ARM64 with the locked Cargo dependencies. It stages the five npm
 tarballs, native archives and binaries, and `SHA256SUMS` as the `release` Actions
 artifact. The npm dry run uses `--provenance --ignore-scripts --access public`.
 Prereleases use their identifier (`alpha`, `beta`, `rc`); stable versions use
-`latest`.
+`latest`. While npm holds no stable version, the `latest` job then points
+`latest` at the prerelease too, so the npm package page and a plain
+`npm install` show the version the documentation names. After the first stable
+version, a prerelease no longer moves `latest`.
 
 Publication is disabled by default. Setting the repository variable
 `RELEASE_PUBLISH=true` enables the publish job **only in a public repository**.
@@ -37,6 +40,12 @@ Before preparing a release, maintainers need:
   repository name and workflow filename `release.yml`. The workflow uses no
   GitHub environment. Node 24 supplies npm with trusted publishing support;
   the publish job grants `id-token: write` and uses `npm publish --provenance`.
+- On each of the five trusted publishers, the allowed action "manage dist-tags
+  with `npm dist-tag`" switched on (it is off by default, and separate from the
+  permission to publish). Without it the `latest` job fails and `latest` stays
+  on the previous version; the publication and the GitHub release are not
+  affected. The job installs a pinned npm, because signing a dist-tag change
+  with the workflow identity needs npm 11.21 or later and Node 24 ships 11.19.
 
 To rehearse and publish a release:
 
@@ -60,7 +69,7 @@ To rehearse and publish a release:
 4. Set the repository variable `RELEASE_PUBLISH` to `true`, then rerun all jobs
    of the successful tag workflow. The publish job verifies checksums,
    publishes the packages and creates the GitHub release. Verify npm provenance,
-   registry installation and the release attachments after publication.
+   registry installation, the dist-tags (`npm view spirolo dist-tags`) and the release attachments after publication.
 5. Remove `RELEASE_PUBLISH` to return subsequent tags to dry runs. npm package
    versions cannot be republished; use a new version and tag for later releases.
 

@@ -3,7 +3,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { localLockPackages, staleLockEntries, workspaceCrates, workspaceVersion } from './cargo-lock.mjs';
-import { distTag } from './dist-tag.mjs';
+import { distTag, takesLatest } from './dist-tag.mjs';
 
 test('Cargo, npm and VSIX metadata agree on the canonical version', () => {
   const result = spawnSync(process.execPath, ['npm/release.mjs', 'check'], { encoding: 'utf8' });
@@ -26,6 +26,17 @@ test('a prerelease publishes under its identifier, never latest', () => {
   assert.equal(distTag('1.0.0'), 'latest');
   assert.throws(() => distTag('1.0.0-1'), /no alphabetic identifier/);
   assert.throws(() => distTag('v1.0'), /Not a semver/);
+});
+
+test('latest follows a prerelease only while the registry holds no release', () => {
+  const prereleases = ['0.0.0-stage', '0.0.1-reserved.0', '0.1.0-alpha.1', '0.1.0-alpha.2'];
+  assert.equal(takesLatest('0.1.0-alpha.2', prereleases), true);
+  assert.equal(takesLatest('0.2.0-rc.1', [...prereleases, '0.2.0-rc.1']), true);
+  // After the first release, a later prerelease leaves `latest` on the release.
+  assert.equal(takesLatest('0.2.0-alpha.1', [...prereleases, '0.1.0', '0.2.0-alpha.1']), false);
+  // A release takes `latest` by publishing under it, so there is nothing to move.
+  assert.equal(takesLatest('0.1.0', prereleases), false);
+  assert.throws(() => takesLatest('v1.0', []), /Not a semver/);
 });
 
 test('Cargo.lock records every workspace crate at the workspace version, so --locked builds it', () => {
