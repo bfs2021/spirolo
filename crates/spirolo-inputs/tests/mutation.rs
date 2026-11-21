@@ -269,6 +269,7 @@ fn bytes_that_are_not_json_are_one_diagnostic_and_no_rows() {
 
 /// One mutant record without its `location` is not skipped on its own: the whole report
 /// is unreadable, the well-formed mutant beside it included.
+/// Current behaviour, pinned so a change is a decision and not an endorsement; see #27.
 #[test]
 fn a_mutant_record_without_its_location_makes_the_whole_report_unreadable() {
     let report = report_with(
@@ -331,6 +332,11 @@ fn a_mutant_whose_file_has_no_source_keeps_its_line_and_column_with_zero_offsets
     );
 }
 
+/// A column past its line's end is clamped to the line's length with its newline, so it
+/// lands on the first byte of the next line; a line past the last is clamped to the
+/// source's length; `"column": 0`, below the schema's minimum of 1, reads as column 1; and
+/// an end before its start is kept as an inverted span.
+/// Current behaviour, pinned so a change is a decision and not an endorsement; see #27.
 #[test]
 fn a_location_outside_the_source_is_clamped_to_its_line_or_to_the_source() {
     // Two lines of four bytes each, the newline included.

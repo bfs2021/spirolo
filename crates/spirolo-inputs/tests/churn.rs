@@ -105,7 +105,7 @@ fn a_rename_counts_toward_its_new_path_and_a_binary_row_adds_no_lines() {
         "churn.txt",
         b"3\t1\tsrc/{cart => basket}/total.ts\n\
           2\t2\t{lib => src}/tax.ts\n\
-          6\t0\tsrc/money.{js => ts}\n\
+          0\t0\tsrc/{money.js => money.ts}\n\
           5\t0\tsrc/{ => money}/round.ts\n\
           1\t1\tsrc/{legacy => }/vat.ts\n\
           0\t0\tdocs/pricing.md => notes/prices.md\n\
@@ -120,7 +120,7 @@ fn a_rename_counts_toward_its_new_path_and_a_binary_row_adds_no_lines() {
             churn("assets/logo.png", 0, 0),
             churn("notes/prices.md", 0, 0),
             churn("src/basket/total.ts", 3, 1),
-            churn("src/money.ts", 6, 0),
+            churn("src/money.ts", 0, 0),
             churn("src/money/round.ts", 5, 0),
             churn("src/tax.ts", 2, 2),
             churn("src/vat.ts", 1, 1),

@@ -307,6 +307,7 @@ fn vitest_json_that_does_not_parse_is_one_diagnostic_and_no_rows() {
 
 /// One result without its `status` is not skipped on its own: the whole report is
 /// unreadable, the well-formed results beside it included.
+/// Current behaviour, pinned so a change is a decision and not an endorsement; see #27.
 #[test]
 fn a_vitest_result_without_its_status_makes_the_whole_report_unreadable() {
     let report = VITEST_JSON.replacen(r#""status": "todo","#, "", 1);
@@ -480,13 +481,13 @@ const FILE_LEVEL_JSON: &str = r#"{
          "title": "reads the seeded rows", "failureMessages": [], "meta": {}}
       ],
       "status": "failed",
-      "message": "Error: seed failed",
+      "message": "seed failed",
       "name": "/work/shop/src/hook.test.ts"
     },
     {
       "assertionResults": [],
       "status": "failed",
-      "message": "Error: Failed to resolve import \"./missing\" from \"src/load.test.ts\"",
+      "message": "Failed to load url ./missing (resolved id: ./missing) in /work/shop/src/load.test.ts. Does the file exist?",
       "name": "/work/shop/src/load.test.ts"
     },
     {
@@ -558,11 +559,12 @@ fn a_vitest_file_that_failed_outside_its_tests_gets_a_file_level_row() {
     );
 }
 
-/// A file with a message that vitest did not mark failed is not a file-level failure.
+/// A file with a message that vitest did not mark failed is not a file-level failure. No
+/// known writer emits this: vitest gives a message only to a file it marks failed.
 #[test]
 fn a_vitest_file_with_a_message_that_did_not_fail_gets_no_file_level_row() {
     let report = r#"{"testResults": [
-        {"name": "src/price.test.ts", "status": "passed", "message": "Error: seed failed",
+        {"name": "src/price.test.ts", "status": "passed", "message": "seed failed",
          "assertionResults": [{"title": "is parked", "status": "skipped"}]}
     ]}"#;
     let tables = read_vitest_json(&context("report.json"), report.as_bytes(), &[]);
@@ -795,6 +797,8 @@ fn a_junit_testcase_without_a_file_in_the_tree_is_a_diagnostic_and_the_others_st
 
 /// A failed case has one `failure` or `error` per failed attempt, as vitest writes them,
 /// so it took one retry less than it has; an `error` fails a case as a `failure` does.
+/// The third case, a `skipped` and a `failure` on one testcase, is one no known writer
+/// emits: the failure wins.
 #[test]
 fn a_junit_case_with_a_failure_or_an_error_failed_and_took_one_retry_less_than_it_has_of_them() {
     let report = r#"<testsuite name="src/price.test.ts" tests="3">
@@ -829,9 +833,11 @@ fn a_junit_case_with_a_failure_or_an_error_failed_and_took_one_retry_less_than_i
     );
 }
 
-/// Retry children in Maven Surefire's shape, which vitest's `JUnit` never writes:
-/// `flakyFailure`/`flakyError` or `rerunFailure`/`rerunError` without a final `failure`
-/// mean the case passed on a retry; with a final `failure` every attempt failed.
+/// Retry children with Maven Surefire's element names, which vitest's `JUnit` never
+/// writes: `flakyFailure`/`flakyError` or `rerunFailure`/`rerunError` without a final
+/// `failure` mean the case passed on a retry; with a final `failure` every attempt failed.
+/// Two of the cases are ones Surefire itself does not write: a `rerunFailure` with no final
+/// `failure` (case b), and a `skipped` beside a `rerunFailure` (case d).
 #[test]
 fn junit_retry_children_read_as_passed_on_retry_unless_the_case_still_failed() {
     let report = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -925,8 +931,11 @@ fn a_junit_suite_timestamp_the_reader_cannot_place_leaves_the_rows_without_a_sta
     }
 }
 
+/// A negative or non-finite `time` (`NaN` and `inf` parse as numbers) reads as a duration
+/// of zero, not as no duration; only a `time` that parses as no number reads as none.
+/// Current behaviour, pinned so a change is a decision and not an endorsement; see #27.
 #[test]
-fn junit_seconds_are_read_as_whole_milliseconds_and_a_time_that_is_not_a_number_as_none() {
+fn junit_seconds_read_as_whole_milliseconds_a_negative_or_non_finite_time_as_zero_a_word_as_none() {
     let times = [
         ("0.0026", Some(3)),
         ("0.0024", Some(2)),
@@ -945,22 +954,31 @@ fn junit_seconds_are_read_as_whole_milliseconds_and_a_time_that_is_not_a_number_
     }
 }
 
-/// Vitest 4 records a failure outside the tests as a failed testcase named after its file,
-/// in the suite of that name. In `hook.test.ts` a hook threw: the file gets a file-level
-/// row and the test it prevented, reported as skipped, reads as failed. In
-/// `steady.test.ts` nothing failed outside the tests, so the parked test stays skipped and
-/// a passing case that happens to be titled like the file is a test like any other.
+/// Vitest (2.1.9 and 4 alike) records a failure outside the tests as a failed testcase
+/// named after its file, written last in the suite of that name. In `hook.test.ts` a hook
+/// threw: the file gets a file-level row and the test it prevented, reported as skipped
+/// before the file's own case, reads as failed. `load.test.ts` failed at import: its suite
+/// holds only the file's own case. In `steady.test.ts` nothing failed outside the tests, so
+/// the parked test stays skipped and a passing case that happens to be titled like the
+/// file is a test like any other.
 const FILE_LEVEL_JUNIT: &str = r#"<?xml version="1.0" encoding="UTF-8" ?>
-<testsuites name="vitest tests" tests="5" failures="2" errors="0" time="0.02">
+<testsuites name="vitest tests" tests="6" failures="3" errors="0" time="0.02">
     <testsuite name="src/hook.test.ts" timestamp="2026-10-01T10:00:00.000Z" hostname="builder" tests="2" failures="1" errors="0" skipped="1" time="0.004">
-        <testcase classname="src/hook.test.ts" name="src/hook.test.ts" time="0">
-            <failure message="seed failed" type="Error">
-Error: seed failed
- ❯ src/hook.test.ts:4:9
-            </failure>
-        </testcase>
         <testcase classname="src/hook.test.ts" name="reads the seeded rows" time="0">
             <skipped/>
+        </testcase>
+        <testcase classname="src/hook.test.ts" name="src/hook.test.ts" time="0.004">
+            <failure message="seed failed" type="Error">
+Error: seed failed
+ ❯ src/hook.test.ts:2:25
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="src/load.test.ts" timestamp="2026-10-01T10:00:00.000Z" hostname="builder" tests="1" failures="1" errors="0" skipped="0" time="0">
+        <testcase classname="src/load.test.ts" name="src/load.test.ts" time="0">
+            <failure message="Failed to load url ./missing (resolved id: ./missing) in /work/shop/src/load.test.ts. Does the file exist?" type="Error">
+Error: Failed to load url ./missing (resolved id: ./missing) in /work/shop/src/load.test.ts. Does the file exist?
+            </failure>
         </testcase>
     </testsuite>
     <testsuite name="src/steady.test.ts" timestamp="2026-10-01T10:00:00.000Z" hostname="builder" tests="3" failures="1" errors="0" skipped="1" time="0.003">
@@ -968,7 +986,10 @@ Error: seed failed
             <skipped/>
         </testcase>
         <testcase classname="src/steady.test.ts" name="is red" time="0.002">
-            <failure message="expected 1 to be 2" type="AssertionError"/>
+            <failure message="expected 1 to be 2 // Object.is equality" type="AssertionError">
+AssertionError: expected 1 to be 2 // Object.is equality
+ ❯ src/steady.test.ts:3:32
+            </failure>
         </testcase>
         <testcase classname="src/steady.test.ts" name="src/steady.test.ts" time="0.001">
         </testcase>
@@ -996,7 +1017,7 @@ fn a_junit_file_that_failed_outside_its_tests_gets_a_file_level_row() {
                 "src/hook.test.ts",
                 &[],
                 RunOutcome::Failed,
-                Some(0),
+                Some(4),
                 Some(0),
             ),
             // Reported as skipped, but it never got to run.
@@ -1007,6 +1028,15 @@ fn a_junit_file_that_failed_outside_its_tests_gets_a_file_level_row() {
                 RunOutcome::Failed,
                 Some(0),
                 None,
+            ),
+            // The file never loaded: its file-level row is all it leaves.
+            run(
+                report,
+                "src/load.test.ts",
+                &[],
+                RunOutcome::Failed,
+                Some(0),
+                Some(0),
             ),
             run(
                 report,
