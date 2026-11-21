@@ -131,6 +131,7 @@ jobs:
       id-token: write
     env:
       PUBLISH_NPM: 'true'
+      REPOSITORY_PRIVATE: ${{ github.event.repository.private }}
       # Trusted publishing authorises `npm dist-tag` from npm 11.21; Node 24 ships an older npm.
       NPM_VERSION: 11.21.3
     steps:

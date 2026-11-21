@@ -66,6 +66,8 @@ test('latest is moved only after an enabled publication, by a pinned npm and the
   assert.equal(latest.needs, 'publish');
   assert.equal(latest.if, publish.if);
   assert.equal(latest.env.PUBLISH_NPM, 'true');
+  // Without it the publish script reads the repository as private and refuses to run.
+  assert.equal(latest.env.REPOSITORY_PRIVATE, publish.env.REPOSITORY_PRIVATE);
   assert.match(latest.env.NPM_VERSION, /^\d+\.\d+\.\d+$/);
   const install = latest.steps.findIndex(step => step.run?.includes('npm install --global "npm@${NPM_VERSION}"'));
   const move = latest.steps.findIndex(step => step.run === 'node npm/publish.mjs --latest');
