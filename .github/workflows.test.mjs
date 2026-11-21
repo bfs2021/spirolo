@@ -28,7 +28,7 @@ test('every workflow pins actions, limits token permissions and discards checkou
       const permissions = job.permissions ?? workflow.permissions;
       const expected = name === 'release.yml' && jobName === 'publish'
         ? { contents: 'write', 'id-token': 'write' }
-        : name === 'release.yml' && jobName === 'registry' ? { contents: 'read', 'id-token': 'write' }
+        : name === 'release.yml' && ['registry', 'latest'].includes(jobName) ? { contents: 'read', 'id-token': 'write' }
         : name === 'codeql.yml' ? { contents: 'read', 'security-events': 'write' } : { contents: 'read' };
       assert.deepEqual(permissions, expected, `${name}/${jobName}: token permissions`);
     }
@@ -59,6 +59,19 @@ test('a v tag builds all npm platforms and rehearses before explicitly enabled p
   assert.ok(!publish.steps.some(step => step.run?.includes('--generate-notes')));
   assert.ok(release.jobs.package.steps.some(step =>
     step.uses?.startsWith('actions/upload-artifact@') && step.with.path === 'target/rc/*'));
+});
+
+test('latest is moved only after an enabled publication, by a pinned npm and the workflow identity', () => {
+  const { latest, publish } = documents.find(({ name }) => name === 'release.yml').workflow.jobs;
+  assert.equal(latest.needs, 'publish');
+  assert.equal(latest.if, publish.if);
+  assert.equal(latest.env.PUBLISH_NPM, 'true');
+  assert.match(latest.env.NPM_VERSION, /^\d+\.\d+\.\d+$/);
+  const install = latest.steps.findIndex(step => step.run?.includes('npm install --global "npm@${NPM_VERSION}"'));
+  const move = latest.steps.findIndex(step => step.run === 'node npm/publish.mjs --latest');
+  assert.ok(install >= 0 && move > install, 'the pinned npm is installed before it moves the tag');
+  assert.ok(latest.steps[install].run.includes('--ignore-scripts'));
+  assert.ok(!JSON.stringify(latest).includes('secrets.'), 'no stored token');
 });
 
 test('the MCP Registry listing follows the npm publication, from a verified pinned publisher', () => {

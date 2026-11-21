@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { publishPlan, verifyChecksums } from './publish.mjs';
+import { latestPlan, publishPlan, verifyChecksums } from './publish.mjs';
 import { distTag } from './dist-tag.mjs';
 
 const launcher = JSON.parse(readFileSync(new URL('./spirolo/package.json', import.meta.url)));
@@ -32,6 +32,24 @@ test('only an enabled public Actions tag can publish; mismatched tags fail befor
   assert.throws(() => publishPlan({ ref, publish: true, actions: true, repositoryPrivate: true }), /public GitHub Actions/);
   const plan = publishPlan({ ref, publish: true, actions: true, repositoryPrivate: false });
   assert.ok(plan.every(({ args }) => !args.includes('--dry-run') && args.includes('--provenance')));
+});
+
+test('after publication latest is pointed at every package of a prerelease, natives first, unless a release exists', () => {
+  const names = [...Object.keys(launcher.optionalDependencies), launcher.name];
+  const prerelease = launcher.version.includes('-');
+  const moves = latestPlan({ ref, publishedVersions: () => ['0.0.1-reserved.0', launcher.version] });
+  assert.deepEqual(moves.map(move => move.name), prerelease ? names : []);
+  for (const { name, args } of moves) {
+    assert.deepEqual(args.slice(0, 4), ['dist-tag', 'add', `${name}@${launcher.version}`, 'latest']);
+    assert.equal(args[args.indexOf('--registry') + 1], 'https://registry.npmjs.org');
+  }
+  // A package that already has a release keeps its `latest`; the others still move.
+  const mixed = latestPlan({ ref, publishedVersions: name => name === launcher.name
+    ? ['0.0.9', launcher.version] : [launcher.version] });
+  assert.ok(!mixed.some(move => move.name === launcher.name));
+  // The tag is never moved to a version the registry does not hold, nor from a mismatched tag.
+  assert.throws(() => latestPlan({ ref, publishedVersions: () => ['0.0.1-reserved.0'] }), /not on the registry yet/);
+  assert.throws(() => latestPlan({ ref: 'refs/tags/v99.0.0', publishedVersions: () => [] }), /tag/);
 });
 
 test('a real npm pack passes checksums and provenance dry run; a modified tarball is refused', () => {
