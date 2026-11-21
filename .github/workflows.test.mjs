@@ -177,3 +177,50 @@ test('the required check formats, lints, spell-checks and audits dependencies, w
     assert.ok(listed('taiki-e/install-action', 'tool').includes(tool), `runner tool: ${tool}`);
   }
 });
+
+test('the weekly mutation run measures every mutated crate and fails only when it measured nothing', async () => {
+  const { source, workflow } = documents.find(({ name }) => name === 'mutants.yml');
+  assert.equal(workflow.on.schedule.length, 1);
+  assert.deepEqual(Object.keys(workflow.on.workflow_dispatch.inputs), ['crate']);
+  // A swallowed exit status is how this job stayed green while testing no mutant at all.
+  assert.doesNotMatch(source, /\|\||continue-on-error|set \+e/);
+
+  const { plan, mutants } = workflow.jobs;
+  // The shards come from the committed plan, narrowed to the crate a manual run asks for.
+  const planned = plan.steps.find(step => step.run?.includes('scripts/public/mutants.mjs plan'));
+  assert.equal(planned.env.CRATE, '${{ inputs.crate }}');
+  assert.ok(!planned.run.includes('${{'), 'the input reaches the script as data, never as shell text');
+  assert.equal(mutants.needs, 'plan');
+  assert.equal(mutants.strategy.matrix, '${{ fromJSON(needs.plan.outputs.matrix) }}');
+  assert.equal(mutants.strategy['fail-fast'], false);
+  assert.ok(mutants['timeout-minutes'] < 360, 'a shard stops before the runner limit');
+
+  const { shardPlan } = await import('../scripts/public/mutants.mjs');
+  const excluded = readFileSync(new URL('../.cargo/mutants.toml', import.meta.url), 'utf8');
+  const crates = readdirSync(new URL('../crates/', import.meta.url)).filter(crate => !excluded.includes(`crates/${crate}/**`));
+  assert.deepEqual([...new Set(shardPlan().map(row => row.crate))], crates.sort());
+  assert.ok(shardPlan('spirolo-model').length > 1, 'the largest crate is split');
+
+  const baseline = mutants.steps.findIndex(step => step.run === 'cargo nextest run --workspace');
+  const measure = mutants.steps.findIndex(step => step.run?.includes('cargo mutants'));
+  // cargo-mutants 27.1.0 runs only the mutated crate's tests as its baseline, so the workflow proves the suite itself.
+  assert.ok(baseline >= 0 && measure > baseline, 'the whole suite passes unmutated before any mutant is judged by it');
+  const run = mutants.steps[measure];
+  // The wrapper writes the counts to the job summary and turns cargo-mutants' exit status into the job's.
+  assert.match(run.run, /^node scripts\/public\/mutants\.mjs run \S.* -- cargo mutants /);
+  for (const argument of [
+    '--package "$CRATE"', '--shard "$SHARD/$SHARDS"',
+    // nextest applies the default filter in .config/nextest.toml; plain cargo test fails on the filtered tests.
+    '--test-tool nextest',
+    // A mutant counts as missed only when no test in the repository catches it.
+    '--test-workspace=true',
+    // In the tree the baseline step passed in, with the timeout that baseline would otherwise have set.
+    '--in-place', '--baseline=skip', '--timeout ',
+  ]) assert.ok(run.run.includes(argument), `cargo mutants runs with ${argument}`);
+  assert.deepEqual(run.env, { CRATE: '${{ matrix.crate }}', SHARD: '${{ matrix.shard }}', SHARDS: '${{ matrix.shards }}' });
+
+  const upload = mutants.steps.find(step => step.uses?.startsWith('actions/upload-artifact@'));
+  assert.equal(upload.if, '${{ !cancelled() }}', 'a run that measured nothing still uploads its logs');
+  assert.equal(upload.with.name, 'mutants-${{ matrix.crate }}-${{ matrix.shard }}-of-${{ matrix.shards }}');
+  assert.equal(upload.with.path, 'mutants.out');
+});
