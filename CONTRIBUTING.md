@@ -32,7 +32,7 @@ cargo insta test --accept --all-features               # accept changed snapshot
 [`typos.toml`](typos.toml)), runs clippy with warnings as errors, builds the workspace from the
 committed lockfile, runs every Rust test with nextest, then the doctests, then every committed
 Node suite (the editor views, the npm launcher and release metadata, and the workflow checks),
-and ends with `cargo deny check` (advisories, licences and sources, configured in
+and ends with `cargo deny check` (advisories, bans, licences and sources, configured in
 [`deny.toml`](deny.toml)). The required check on a pull request is this one command, so any of
 them failing blocks the merge.
 
