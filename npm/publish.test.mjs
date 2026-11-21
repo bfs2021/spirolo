@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { latestPlan, publishPlan, verifyChecksums } from './publish.mjs';
+import { awaitVersion, latestPlan, publishPlan, verifyChecksums } from './publish.mjs';
 import { distTag } from './dist-tag.mjs';
 
 const launcher = JSON.parse(readFileSync(new URL('./spirolo/package.json', import.meta.url)));
@@ -50,6 +50,24 @@ test('after publication latest is pointed at every package of a prerelease, nati
   // The tag is never moved to a version the registry does not hold, nor from a mismatched tag.
   assert.throws(() => latestPlan({ ref, publishedVersions: () => ['0.0.1-reserved.0'] }), /not on the registry yet/);
   assert.throws(() => latestPlan({ ref: 'refs/tags/v99.0.0', publishedVersions: () => [] }), /tag/);
+});
+
+test('the registry is read again until it lists the published version, and not forever', () => {
+  const readings = [['0.1.0-alpha.1'], ['0.1.0-alpha.1'], ['0.1.0-alpha.1', '0.1.0-alpha.2']];
+  let reads = 0;
+  let pauses = 0;
+  const read = () => readings[Math.min(reads++, readings.length - 1)];
+  const pause = () => { pauses += 1; };
+  assert.deepEqual(awaitVersion('spirolo', '0.1.0-alpha.2', { read, pause }), readings[2]);
+  assert.deepEqual([reads, pauses], [3, 2]);
+  // Already listed: one read, no pause.
+  reads = 2; pauses = 0;
+  awaitVersion('spirolo', '0.1.0-alpha.2', { read, pause });
+  assert.deepEqual([reads, pauses], [3, 0]);
+  // Never listed: it stops after its attempts and hands back what the registry holds.
+  let never = 0;
+  const stale = awaitVersion('spirolo', '9.9.9', { read: () => { never += 1; return ['0.1.0-alpha.1']; }, pause, attempts: 5 });
+  assert.deepEqual([stale, never], [['0.1.0-alpha.1'], 5]);
 });
 
 test('a real npm pack passes checksums and provenance dry run; a modified tarball is refused', () => {

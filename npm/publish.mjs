@@ -49,8 +49,20 @@ export function latestPlan({ ref, publishedVersions }) {
   }));
 }
 
+// The registry lists a version some minutes after `npm publish` returns. Reads `read(name)` until
+// it holds `version`, pausing between attempts, and answers the last reading either way: the
+// caller decides what a version that never appeared means.
+export function awaitVersion(name, version, { read, pause, attempts = 40 }) {
+  let published = read(name);
+  for (let attempt = 1; attempt < attempts && !published.includes(version); attempt += 1) {
+    pause();
+    published = read(name);
+  }
+  return published;
+}
+
 function registryVersions(name) {
-  const result = spawnSync('npm', ['view', name, 'versions', '--json', '--registry', registry], { encoding: 'utf8' });
+  const result = spawnSync('npm', ['view', name, 'versions', '--json', '--prefer-online', '--registry', registry], { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(`npm view failed: ${name} (${result.error ?? result.stderr})`);
   return [JSON.parse(result.stdout)].flat();
 }
@@ -89,7 +101,12 @@ if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.me
   } else if (latest) {
     // After publication only: the registry is read for what it holds, then `latest` is moved.
     if (process.env.PUBLISH_NPM !== 'true') throw new Error('Moving latest requires an enabled publication');
-    const moves = latestPlan({ ref: process.env.GITHUB_REF, publishedVersions: registryVersions });
+    // Up to ten minutes per package for the registry to list the version just published.
+    const pause = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 15_000);
+    const moves = latestPlan({
+      ref: process.env.GITHUB_REF,
+      publishedVersions: name => awaitVersion(name, launcher.version, { read: registryVersions, pause }),
+    });
     if (moves.length === 0) console.log(`latest stays where it is for ${launcher.version}`);
     for (const { name, args } of moves) {
       console.log(`Point latest at ${name}@${launcher.version}`);
