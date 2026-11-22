@@ -14,7 +14,8 @@ open an issue to propose it first, so the approach is agreed before the code is 
 
 ## The dev loop
 
-You need the stable Rust toolchain (`rust-toolchain.toml` adds rustfmt and clippy), Node 20 or
+You need [rustup](https://rustup.rs), which installs the Rust version pinned in
+`rust-toolchain.toml` with rustfmt and clippy the first time you run cargo here, Node 20 or
 newer with npm, [`just`](https://github.com/casey/just),
 [`cargo-nextest`](https://nexte.st), [`typos`](https://github.com/crate-ci/typos) and
 [`cargo-deny`](https://github.com/EmbarkStudios/cargo-deny). Updating snapshots also needs
