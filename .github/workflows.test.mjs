@@ -20,7 +20,7 @@ test('every workflow pins actions, limits token permissions and discards checkou
         if (!step.uses) continue;
         assert.match(step.uses, /^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/, `${name}/${jobName}: ${step.uses}`);
         const line = source.split('\n').find(line => line.includes(`uses: ${step.uses}`));
-        assert.match(line, / # (?:v\d|stable|1\.90)/, `${name}: version comment`);
+        assert.match(line, / # v\d/, `${name}: version comment`);
         if (step.uses.startsWith('actions/checkout@')) {
           assert.equal(step.with?.['persist-credentials'], false, `${name}/${jobName}`);
         }
@@ -163,7 +163,7 @@ test('every job that runs Rust installs the one version pinned in rust-toolchain
   let installs = 0;
   for (const { name, source, workflow } of documents) {
     // Nothing in a workflow may choose a compiler: the file is the only place a version is written.
-    assert.doesNotMatch(source, /rust-toolchain@|rustup default|rustup override|RUSTUP_TOOLCHAIN|cargo \+|toolchain:/, name);
+    assert.doesNotMatch(source, /rust-toolchain@|rustup (?:default|override|run|update)|RUSTUP_TOOLCHAIN|\bRUSTC\b|cargo \+|toolchain:/, name);
     for (const [jobName, job] of Object.entries(workflow.jobs)) {
       const steps = job.steps ?? [];
       const rust = steps.findIndex(step =>
