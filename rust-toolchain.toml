@@ -1,3 +1,6 @@
+# One exact Rust version for every developer and every CI job. rustup reads this file and
+# installs it on first use. Dependabot raises it by pull request, so a new Rust release
+# (and its new clippy lints) reaches the required check only when that pull request is merged.
 [toolchain]
-channel = "stable"
+channel = "1.100.0"
 components = ["rustfmt", "clippy"]

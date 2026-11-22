@@ -20,7 +20,7 @@ test('every workflow pins actions, limits token permissions and discards checkou
         if (!step.uses) continue;
         assert.match(step.uses, /^[\w.-]+\/[\w./-]+@[a-f0-9]{40}$/, `${name}/${jobName}: ${step.uses}`);
         const line = source.split('\n').find(line => line.includes(`uses: ${step.uses}`));
-        assert.match(line, / # (?:v\d|stable|1\.90)/, `${name}: version comment`);
+        assert.match(line, / # v\d/, `${name}: version comment`);
         if (step.uses.startsWith('actions/checkout@')) {
           assert.equal(step.with?.['persist-credentials'], false, `${name}/${jobName}`);
         }
@@ -131,22 +131,51 @@ test('CodeQL scans Actions, JavaScript/TypeScript and Rust on main, pull request
   assert.equal(init.uses.split('@')[1], run.uses.split('@')[1], 'init and analyze share one CodeQL release');
 });
 
-test('Dependabot maintains Cargo, npm and Actions in weekly groups', () => {
+test('Dependabot maintains Cargo, npm, Actions and the Rust version every week', () => {
   const document = parseDocument(readFileSync(new URL('./dependabot.yml', import.meta.url), 'utf8'));
   assert.deepEqual(document.errors, []);
   const config = document.toJS();
   assert.equal(config.version, 2);
-  assert.deepEqual(config.updates.map(entry => entry['package-ecosystem']).sort(), ['cargo', 'github-actions', 'npm']);
+  assert.deepEqual(config.updates.map(entry => entry['package-ecosystem']).sort(),
+    ['cargo', 'github-actions', 'npm', 'rust-toolchain']);
   for (const entry of config.updates) {
     assert.equal(entry.schedule.interval, 'weekly');
+    // The Rust version is one dependency: its pull request is already the only one.
+    if (entry['package-ecosystem'] === 'rust-toolchain') continue;
     assert.ok(Object.keys(entry.groups ?? {}).length > 0, `${entry['package-ecosystem']} groups`);
   }
+  // rust-toolchain.toml sits at the root; without this entry the pinned version never moves.
+  assert.equal(config.updates.find(entry => entry['package-ecosystem'] === 'rust-toolchain').directory, '/');
   const npm = config.updates.find(entry => entry['package-ecosystem'] === 'npm');
   for (const directory of ['/.github', '/editors/vscode', '/website', '/npm/*']) {
     assert.ok(npm.directories.includes(directory), `npm coverage: ${directory}`);
   }
   const launcher = JSON.parse(readFileSync(new URL('../npm/spirolo/package.json', import.meta.url), 'utf8'));
   assert.ok(npm.ignore.some(entry => entry['dependency-name'] === `${launcher.name}*`), 'native versions follow Cargo');
+});
+
+const toolchain = readFileSync(new URL('../rust-toolchain.toml', import.meta.url), 'utf8');
+
+test('every job that runs Rust installs the one version pinned in rust-toolchain.toml', () => {
+  // A channel like `stable` moves on its own: a new Rust release then fails clippy, inside the
+  // required check, on code nobody touched. An exact version moves only by pull request.
+  assert.match(toolchain, /^channel = "\d+\.\d+\.\d+"$/m, 'an exact Rust version');
+  let installs = 0;
+  for (const { name, source, workflow } of documents) {
+    // Nothing in a workflow may choose a compiler: the file is the only place a version is written.
+    assert.doesNotMatch(source, /rust-toolchain@|rustup (?:default|override|run|update)|RUSTUP_TOOLCHAIN|\bRUSTC\b|cargo \+|toolchain:/, name);
+    for (const [jobName, job] of Object.entries(workflow.jobs)) {
+      const steps = job.steps ?? [];
+      const rust = steps.findIndex(step =>
+        /\b(?:cargo|just)\b/.test(step.run ?? '') || step.uses?.startsWith('Swatinem/rust-cache@'));
+      if (rust < 0) continue;
+      // With no argument, rustup installs the toolchain the file names, with its components.
+      const install = steps.findIndex(step => step.run?.split('\n')[0] === 'rustup toolchain install');
+      assert.ok(install >= 0 && install < rust, `${name}/${jobName}: installs the pinned toolchain before using Rust`);
+      installs += 1;
+    }
+  }
+  assert.equal(installs, 3, 'the required check, the mutation shards and the release build');
 });
 
 test('the required check formats, lints, spell-checks and audits dependencies, with its tools installed', () => {
@@ -168,10 +197,11 @@ test('the required check formats, lints, spell-checks and audits dependencies, w
 
   const { steps } = documents.find(({ name }) => name === 'ci.yml').workflow.jobs.snapshot;
   assert.equal(steps.at(-1).run, 'just ci');
-  // dtolnay/rust-toolchain installs the minimal profile: no clippy, no rustfmt unless asked.
   const listed = (action, input) => steps.find(step => step.uses?.startsWith(`${action}@`)).with[input].split(/,\s*/);
+  // The gates need clippy and rustfmt; rustup installs what rust-toolchain.toml lists.
+  const components = JSON.parse(toolchain.match(/^components = (\[.*\])$/m)[1]);
   for (const component of ['clippy', 'rustfmt']) {
-    assert.ok(listed('dtolnay/rust-toolchain', 'components').includes(component), `toolchain component: ${component}`);
+    assert.ok(components.includes(component), `toolchain component: ${component}`);
   }
   for (const tool of ['cargo-deny', 'cargo-nextest', 'just', 'typos']) {
     assert.ok(listed('taiki-e/install-action', 'tool').includes(tool), `runner tool: ${tool}`);

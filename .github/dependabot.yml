@@ -29,6 +29,11 @@ updates:
       security:
         applies-to: security-updates
         patterns: ["*"]
+  # The version pinned in rust-toolchain.toml. Its pull request runs the required check
+  # under the new compiler and the new clippy before anything else has to pass them.
+  - package-ecosystem: rust-toolchain
+    directory: /
+    schedule: { interval: weekly }
   - package-ecosystem: github-actions
     directory: /
     schedule: { interval: weekly }
