@@ -9,6 +9,13 @@ on:
         description: "One crate to mutate, for example spirolo-inputs. Empty runs every crate."
         type: string
         default: ""
+# One mutation run at a time: the shard cap below holds per run, so a later run waits for
+# the first to end instead of doubling the job slots taken. `queue: max` keeps every waiting
+# run; by default a newer run cancels the one already waiting.
+concurrency:
+  group: mutants
+  cancel-in-progress: false
+  queue: max
 jobs:
   plan:
     runs-on: ubuntu-latest
@@ -32,6 +39,9 @@ jobs:
     timeout-minutes: 330
     strategy:
       fail-fast: false
+      # Half of the 20 jobs the account may run at once, so a pull request's checks start
+      # while a full run is going. A full run is about 2,540 runner minutes: over four hours.
+      max-parallel: 10
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
