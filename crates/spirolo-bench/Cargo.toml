@@ -3,6 +3,7 @@ name = "spirolo-bench"
 description = "Precision harness: runs the binary over corpus/ and diffs against each repo's truth.json"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

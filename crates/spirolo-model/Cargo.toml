@@ -3,6 +3,7 @@ name = "spirolo-model"
 description = "Whole-project model of a JavaScript test suite: the tables every family queries"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

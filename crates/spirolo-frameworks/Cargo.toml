@@ -3,6 +3,7 @@ name = "spirolo-frameworks"
 description = "Framework recognisers (Vitest, Jest, Playwright, MSW) turning a parsed file into model rows"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false
