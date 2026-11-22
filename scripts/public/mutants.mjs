@@ -14,9 +14,13 @@ import { spawnSync } from 'node:child_process';
 import { appendFileSync, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-// Shards per mutated crate, sized for about 120 mutants each: on a GitHub runner a mutant
-// costs up to a minute (rebuild and relink the workspace's tests, then run them), so a shard
-// should end in about two hours, well inside the six a job may take. Recount with
+// Shards per mutated crate, about 120 mutants each. Measured on the first full run
+// (2026-11-21, 44 shards, 2,538 runner minutes): a mutant costs 9 to 25 seconds in five
+// crates and 42 in spirolo-model (rebuild and relink the workspace's tests, then run them),
+// so a shard took 14 to 97 minutes, well inside the six hours a job may take. Each shard
+// spends 70 to 100 seconds on setup and the baseline, about 3% of the run in all, so fewer,
+// larger shards would save almost nothing; what keeps the run out of the way of other jobs
+// is `max-parallel` in the workflow, not this table. Recount with
 // `cargo mutants --list --package <crate> | wc -l` (2026-11: 323, 558, 223, 2215, 569, 1201).
 const SHARDS = {
   spirolo: 3,

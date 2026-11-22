@@ -270,3 +270,17 @@ test('the weekly mutation run measures every mutated crate and fails only when i
   assert.equal(totals.steps[sum].run, 'node scripts/public/mutants.mjs totals shards');
   assert.equal(totals.steps[sum].env.CRATE, planned.env.CRATE, 'the totals expect the shards that were planned');
 });
+
+test('the mutation run leaves half the job slots free, and two mutation runs never overlap', () => {
+  const { workflow } = documents.find(({ name }) => name === 'mutants.yml');
+  // The account runs 20 jobs at once. Uncapped, the 44 shards took all 20 for three hours and
+  // a pull request's checks (the required one and three CodeQL jobs) waited behind them.
+  const cap = workflow.jobs.mutants.strategy['max-parallel'];
+  assert.ok(Number.isInteger(cap) && cap >= 1 && cap <= 10, `max-parallel is ${cap}: at most half of the 20 job slots`);
+  // The cap holds per run, so two runs at once would hold twice as many: a second run waits
+  // for the first. The group is one fixed name, shared by the schedule and every manual run.
+  assert.deepEqual(workflow.concurrency, { group: 'mutants', 'cancel-in-progress': false });
+  for (const [jobName, job] of Object.entries(workflow.jobs)) {
+    assert.equal(job.concurrency, undefined, `${jobName}: no job leaves the run's group`);
+  }
+});
