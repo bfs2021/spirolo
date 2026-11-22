@@ -18,8 +18,8 @@ import { fileURLToPath } from 'node:url';
 // (2026-11-21, 44 shards, 2,538 runner minutes): a mutant costs 9 to 25 seconds in five
 // crates and 42 in spirolo-model (rebuild and relink the workspace's tests, then run them),
 // so a shard took 14 to 97 minutes, well inside the six hours a job may take. Each shard
-// spends 70 to 100 seconds on setup and the baseline, about 3% of the run in all, so fewer,
-// larger shards would save almost nothing; what keeps the run out of the way of other jobs
+// spends 67 to 104 seconds outside the mutation step (setup, the baseline, the upload), 61
+// minutes or 2.4% of the run in all, so fewer, larger shards would save almost nothing; what keeps the run out of the way of other jobs
 // is `max-parallel` in the workflow, not this table. Recount with
 // `cargo mutants --list --package <crate> | wc -l` (2026-11: 323, 558, 223, 2215, 569, 1201).
 const SHARDS = {

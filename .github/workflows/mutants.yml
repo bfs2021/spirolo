@@ -9,11 +9,13 @@ on:
         description: "One crate to mutate, for example spirolo-inputs. Empty runs every crate."
         type: string
         default: ""
-# One mutation run at a time: the shard cap below holds per run, so a second run waits for
-# the first to end instead of doubling the job slots taken.
+# One mutation run at a time: the shard cap below holds per run, so a later run waits for
+# the first to end instead of doubling the job slots taken. `queue: max` keeps every waiting
+# run; by default a newer run cancels the one already waiting.
 concurrency:
   group: mutants
   cancel-in-progress: false
+  queue: max
 jobs:
   plan:
     runs-on: ubuntu-latest

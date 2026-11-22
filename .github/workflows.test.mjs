@@ -277,10 +277,14 @@ test('the mutation run leaves half the job slots free, and two mutation runs nev
   // a pull request's checks (the required one and three CodeQL jobs) waited behind them.
   const cap = workflow.jobs.mutants.strategy['max-parallel'];
   assert.ok(Number.isInteger(cap) && cap >= 1 && cap <= 10, `max-parallel is ${cap}: at most half of the 20 job slots`);
-  // The cap holds per run, so two runs at once would hold twice as many: a second run waits
+  // The cap holds per matrix, so a second matrix in the run would add its own jobs on top.
+  assert.deepEqual(Object.keys(workflow.jobs).filter(jobName => workflow.jobs[jobName].strategy), ['mutants']);
+  // And it holds per run, so two runs at once would hold twice as many: a later run waits
   // for the first. The group is one fixed name, shared by the schedule and every manual run.
-  assert.deepEqual(workflow.concurrency, { group: 'mutants', 'cancel-in-progress': false });
+  // `queue: max` keeps every waiting run; by default a newer one cancels the one already
+  // waiting, and a manual run could cancel the scheduled one that way.
+  assert.deepEqual(workflow.concurrency, { group: 'mutants', 'cancel-in-progress': false, queue: 'max' });
   for (const [jobName, job] of Object.entries(workflow.jobs)) {
-    assert.equal(job.concurrency, undefined, `${jobName}: no job leaves the run's group`);
+    assert.equal(job.concurrency, undefined, `${jobName}: the run's group is the only one`);
   }
 });
