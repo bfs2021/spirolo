@@ -3,6 +3,7 @@ name = "spirolo-inputs"
 description = "Parsers for artifacts other tools write: coverage, mutation, JUnit, runner JSON"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

@@ -3,6 +3,7 @@ name = "spirolo"
 description = "Whole-project analyzer for JavaScript test suites: finds tests that pass for the wrong reason"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish = false

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { localLockPackages, staleLockEntries, workspaceCrates, workspaceVersion } from './cargo-lock.mjs';
 import { distTag, takesLatest } from './dist-tag.mjs';
@@ -45,6 +45,17 @@ test('Cargo.lock records every workspace crate at the workspace version, so --lo
   const crates = workspaceCrates('.');
   assert.ok(crates.includes('spirolo') && crates.length === localLockPackages(lock).size, crates.join(' '));
   assert.deepEqual(staleLockEntries(lock, version, crates), []);
+});
+
+test('every crate carries the minimum Rust version the workspace states', () => {
+  // A `rust-version` no crate inherits is read by nothing: cargo gives no clear refusal on an
+  // older compiler, and clippy does not flag a call newer than the stated minimum.
+  assert.match(readFileSync('Cargo.toml', 'utf8'), /^rust-version = "\d+\.\d+"$/m);
+  const crates = readdirSync('crates');
+  assert.ok(crates.length > 0);
+  for (const crate of crates) {
+    assert.match(readFileSync(`crates/${crate}/Cargo.toml`, 'utf8'), /^rust-version\.workspace = true$/m, crate);
+  }
 });
 
 test('a version bump without cargo update --workspace is named crate by crate', () => {
