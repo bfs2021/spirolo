@@ -459,6 +459,42 @@ fn an_issue_url_above_the_describe_does_not_track_a_skip_outside_it() {
 }
 
 #[test]
+fn an_issue_url_above_the_describe_does_not_track_a_skip_in_a_nested_describe() {
+    // The link covers the skips written directly in its describe. A skip one describe
+    // further in is too far from the comment to count as linked by it.
+    let (flagged, tracked) = judged(
+        "comment-above-describe-nested",
+        "// https://github.com/o/r/issues/12\n\
+         describe('outer', () => {\n\
+         \x20 it.skip('direct child', () => {})\n\
+         \x20 describe('inner', () => {\n\
+         \x20   it.skip('nested child', () => {})\n\
+         \x20 });\n\
+         \x20 it.skip('direct child after the inner describe', () => {})\n\
+         });\n",
+    );
+    assert_eq!(flagged, ["skip \"nested child\" has no linked issue"]);
+    assert_eq!(tracked, ["yes", "no", "yes"]);
+}
+
+#[test]
+fn an_issue_url_above_the_describe_tracks_a_describe_skip_written_in_it() {
+    // A `describe.skip` is a skip like any other: written directly in a linked describe,
+    // it is tracked. Its own children read its comments, not the outer link.
+    let (flagged, tracked) = judged(
+        "comment-above-describe-describe-skip",
+        "// https://github.com/o/r/issues/12\n\
+         describe('outer', () => {\n\
+         \x20 describe.skip('parked block', () => {\n\
+         \x20   it('runs nothing', () => {})\n\
+         \x20 });\n\
+         });\n",
+    );
+    assert_eq!(flagged, Vec::<String>::new(), "{flagged:#?}");
+    assert_eq!(tracked, ["yes"]);
+}
+
+#[test]
 fn a_pull_request_url_in_the_title_tracks_the_skip() {
     let (flagged, tracked) = judged(
         "pull-url-title",

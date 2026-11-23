@@ -93,10 +93,10 @@ struct Collector<'a> {
     /// Enclosing `describe` titles, outermost first — the current row's `suite_path`.
     suite_path: Vec<String>,
     /// The comment lines adjacent to each enclosing `describe`, outermost first, parallel to
-    /// `suite_path`. A skip inside a suite inherits these: a real suite (gatsby catch-links.js)
-    /// puts its issue link above the `describe`, not above each `it.skip`, so the skips it holds
-    /// count as tracked by that link. Popped when the describe closes, so a skip written after
-    /// it does not inherit them.
+    /// `suite_path`. A skip inherits the last entry only, the `describe` directly around it:
+    /// a real suite (gatsby catch-links.js) puts its issue link above the `describe`, not
+    /// above each `it.skip`. A comment further out is too far from the skip to count as its
+    /// link. Popped when the describe closes, so a skip written after it inherits nothing.
     suite_comments: Vec<Vec<String>>,
     /// The `const` tables walked past and the loops currently open, so a `.each` over a
     /// local binding is counted here and a definition in a loop knows its multiplicity.
@@ -203,18 +203,12 @@ impl<'a> Collector<'a> {
                 _ => {}
             }
         }
-        if info.kind == TestKind::Suite {
-            // A `describe.skip` reads its own adjacent comments, like any other skip. Child
-            // skips inherit them through `suite_comments` when the suite is entered below.
-            if let Some(skip) = skip.as_mut() {
-                skip.comments = comments_beside(self.source, call);
-            }
-        } else if let Some(skip) = skip.as_mut() {
-            // The skip's own adjacent comments come first, then the enclosing describes'
-            // comments (innermost first). A rule looking for an issue reference sees both.
+        if let Some(skip) = skip.as_mut() {
+            // The skip's own adjacent comments come first, then those of the `describe`
+            // directly around it. A rule looking for an issue reference reads both.
             let mut comments = comments_beside(self.source, call);
-            for suite in self.suite_comments.iter().rev() {
-                comments.extend(suite.iter().cloned());
+            if let Some(parent) = self.suite_comments.last() {
+                comments.extend(parent.iter().cloned());
             }
             skip.comments = comments;
         }
